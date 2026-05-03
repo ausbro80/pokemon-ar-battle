@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>⚡ Pokemon AR</title>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+  }
+}
+</script>
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root { --pkmn-yellow: #FFCB05; --pkmn-red: #EE1515; --ink: #222224; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Trebuchet MS', sans-serif; color: #fff; }
+
+  #start-screen {
+    position: fixed; inset: 0; z-index: 100;
+    background: radial-gradient(circle at center, rgba(255,203,5,0.2), #0a0a18 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; text-align: center;
+    transition: opacity 0.6s ease;
+  }
+  #start-screen.hidden { opacity: 0; pointer-events: none; }
+
+  .pokeball {
+    width: 100px; height: 100px; border-radius: 50%;
+    background: linear-gradient(180deg, #fff 0%, #fff 49%, var(--ink) 49%, var(--ink) 51%, var(--pkmn-red) 51%, var(--pkmn-red) 100%);
+    border: 4px solid var(--ink);
+    margin-bottom: 24px; position: relative;
+    box-shadow: 0 12px 40px rgba(238,21,21,0.4);
+    animation: bob 3s ease-in-out infinite;
+  }
+  .pokeball::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    width: 26px; height: 26px; background: #fff; border: 4px solid var(--ink);
+    border-radius: 50%; transform: translate(-50%, -50%);
+    box-shadow: inset 0 0 0 3px #fff;
+  }
+  @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+
+  h1 {
+    font-size: clamp(32px, 8vw, 52px); font-weight: 900; letter-spacing: 2px;
+    color: var(--pkmn-yellow);
+    text-shadow: 0 4px 20px rgba(255,203,5,0.4);
+    margin-bottom: 8px; text-transform: uppercase;
+  }
+  .subtitle {
+    font-size: 12px; letter-spacing: 4px; color: rgba(255,203,5,0.7);
+    text-transform: uppercase; margin-bottom: 32px;
+  }
+
+  .start-btn {
+    background: linear-gradient(180deg, var(--pkmn-yellow), #d9a704);
+    color: var(--ink); border: 3px solid var(--ink);
+    padding: 16px 44px; font-size: 17px; font-weight: 900;
+    letter-spacing: 3px; text-transform: uppercase;
+    border-radius: 999px; cursor: pointer;
+    box-shadow: 0 8px 24px rgba(255,203,5,0.4);
+  }
+  .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #ar-container { position: fixed; inset: 0; }
+
+  #ar-ui {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    padding: 16px; display: none; justify-content: space-between; align-items: center;
+    pointer-events: none;
+  }
+  #ar-ui.active { display: flex; }
+  .badge {
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
+    border: 2px solid var(--pkmn-yellow);
+    padding: 8px 14px; border-radius: 999px;
+    font-size: 11px; font-weight: 900; letter-spacing: 2px;
+    color: var(--pkmn-yellow); pointer-events: auto;
+  }
+  .badge::before { content: '⚡'; margin-right: 6px; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: 0.4; } }
+
+  .stop-btn {
+    background: var(--pkmn-red); color: #fff; border: 2px solid #fff;
+    padding: 8px 16px; border-radius: 999px;
+    font-size: 11px; font-weight: 900; letter-spacing: 2px;
+    cursor: pointer; pointer-events: auto;
+  }
+
+  #scan-hint {
+    position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+    z-index: 50; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px);
+    padding: 12px 20px; border: 2px solid var(--pkmn-yellow);
+    border-radius: 999px; font-size: 13px; font-weight: 700;
+    color: var(--pkmn-yellow); display: none; white-space: nowrap;
+  }
+  #scan-hint.active { display: block; animation: blink 1.5s infinite; }
+
+  #attack-btn {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+    z-index: 50; background: linear-gradient(180deg, var(--pkmn-yellow), #d9a704);
+    color: var(--ink); border: 3px solid var(--ink);
+    padding: 16px 36px; border-radius: 999px;
+    font-size: 16px; font-weight: 900; letter-spacing: 2px;
+    cursor: pointer; display: none;
+    box-shadow: 0 8px 24px rgba(255,203,5,0.5);
+  }
+  #attack-btn.active { display: block; }
+  #attack-btn:active { transform: translateX(-50%) translateY(2px); }
+
+  /* 디버그 패널 (모바일에서 콘솔 못 보니까 화면에 표시) */
+  #debug-log {
+    position: fixed; top: 60px; left: 8px; right: 8px;
+    z-index: 49; max-height: 180px; overflow-y: auto;
+    background: rgba(0,0,0,0.85); border: 1px solid var(--pkmn-yellow);
+    border-radius: 8px; padding: 8px 10px;
+    font-family: monospace; font-size: 10px; line-height: 1.4;
+    color: #aaffaa; display: none;
+    pointer-events: none;
+  }
+  #debug-log.active { display: block; }
+  #debug-log .err { color: #ff6666; }
+  #debug-log .warn { color: #ffaa00; }
+
+  #status-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.9);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px; text-align: center;
+  }
+  #status-overlay.active { display: flex; }
+  .status-card {
+    background: rgba(255,255,255,0.05); border: 2px solid var(--pkmn-yellow);
+    border-radius: 16px; padding: 24px; max-width: 360px;
+  }
+  .status-card h3 { color: var(--pkmn-yellow); margin-bottom: 12px; }
+  .status-card p { font-size: 13px; line-height: 1.5; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid rgba(255,203,5,0.2);
+    border-top-color: var(--pkmn-yellow);
+    border-radius: 50%; margin: 0 auto 16px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 가로 모드 안내 */
+  #rotate-hint {
+    position: fixed; inset: 0; z-index: 300;
+    background: linear-gradient(135deg, #0a0a18 0%, #1a1a2e 100%);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; text-align: center; color: #fff;
+  }
+  #rotate-hint.active { display: flex; }
+  .rotate-icon { font-size: 80px; animation: rotate-icon 2s ease-in-out infinite; }
+  @keyframes rotate-icon {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(90deg); }
+  }
+  #rotate-hint h2 { color: var(--pkmn-yellow); font-size: 24px; margin: 24px 0 8px; }
+  #rotate-hint p { font-size: 14px; opacity: 0.7; }
+  .rotate-arrow { font-size: 60px; color: var(--pkmn-yellow); margin-top: 24px; animation: spin 2s linear infinite; }
+
+  /* HP 바 */
+  .hp-bar {
+    position: fixed; top: 70px; z-index: 45;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+    border: 2px solid #fff;
+    padding: 8px 12px; border-radius: 8px;
+    min-width: 180px; display: none;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .hp-bar.active { display: block; }
+  .hp-bar.pikachu-hp { right: 12px; border-color: var(--pkmn-yellow); }
+  .hp-bar.charizard-hp { left: 12px; border-color: #ff6600; }
+  .hp-name {
+    font-size: 11px; font-weight: 900; letter-spacing: 1px;
+    margin-bottom: 4px; color: #fff;
+  }
+  .hp-track {
+    background: #333; height: 10px; border-radius: 5px; overflow: hidden;
+    border: 1px solid #555;
+  }
+  .hp-fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
+    transition: width 0.4s ease, background 0.4s;
+    border-radius: 5px;
+  }
+  .hp-fill.warn { background: linear-gradient(90deg, #ffc107 0%, #ff9800 100%); }
+  .hp-fill.danger { background: linear-gradient(90deg, #f44336 0%, #d32f2f 100%); animation: pulse-danger 0.6s infinite; }
+  @keyframes pulse-danger { 50% { opacity: 0.5; } }
+  .hp-text {
+    font-size: 10px; font-family: monospace;
+    color: #fff; margin-top: 4px; text-align: right;
+  }
+
+  /* VS 인트로 */
+  #vs-intro {
+    position: fixed; inset: 0; z-index: 150;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    display: none; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #vs-intro.active { display: flex; animation: vs-fade 2s forwards; }
+  @keyframes vs-fade {
+    0% { opacity: 0; }
+    20% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { opacity: 0; pointer-events: none; }
+  }
+  .vs-text {
+    font-size: clamp(80px, 20vw, 180px);
+    font-weight: 900; color: var(--pkmn-yellow);
+    text-shadow: 0 0 40px rgba(255,203,5,0.8), 0 4px 20px rgba(238,21,21,0.6);
+    -webkit-text-stroke: 4px #222;
+    animation: vs-zoom 1.2s ease-out;
+  }
+  @keyframes vs-zoom {
+    0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+    60% { transform: scale(1.3) rotate(10deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  .vs-subtitle {
+    position: absolute; bottom: 30%;
+    font-size: 24px; font-weight: 900; letter-spacing: 6px;
+    color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+    animation: vs-subtitle 1s 0.6s both;
+  }
+  @keyframes vs-subtitle {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 배틀 결과 */
+  #battle-result {
+    position: fixed; inset: 0; z-index: 180;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: auto;
+  }
+  #battle-result.active { display: flex; }
+  .result-text {
+    font-size: clamp(60px, 16vw, 140px);
+    font-weight: 900; color: var(--pkmn-red);
+    text-shadow: 0 0 40px rgba(238,21,21,0.8);
+    -webkit-text-stroke: 4px #fff;
+    animation: ko-shake 0.6s ease-out;
+  }
+  @keyframes ko-shake {
+    0% { transform: scale(0.3) rotate(-30deg); opacity: 0; }
+    40% { transform: scale(1.4) rotate(5deg); opacity: 1; }
+    60% { transform: scale(0.95) rotate(-3deg); }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  .result-winner {
+    font-size: 24px; font-weight: 900; letter-spacing: 3px;
+    color: var(--pkmn-yellow); margin: 24px 0;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+    animation: winner-glow 1.5s 0.8s both;
+  }
+  @keyframes winner-glow {
+    0% { opacity: 0; }
+    100% { opacity: 1; text-shadow: 0 0 30px rgba(255,203,5,0.8); }
+  }
+  .rematch-btn {
+    background: linear-gradient(180deg, var(--pkmn-yellow), #d9a704);
+    color: var(--ink); border: 3px solid var(--ink);
+    padding: 14px 36px; border-radius: 999px;
+    font-size: 16px; font-weight: 900; letter-spacing: 3px;
+    cursor: pointer; margin-top: 16px;
+    box-shadow: 0 8px 24px rgba(255,203,5,0.4);
+    animation: winner-glow 1.5s 1.2s both;
+  }
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <div class="pokeball"></div>
+  <h1>POKEMON AR</h1>
+  <div class="subtitle">⚡ Pikachu vs 🔥 Charizard ⚡</div>
+  <button class="start-btn" id="start-btn" disabled>LOADING...</button>
+</div>
+
+<!-- 가로 모드 안내 (세로 모드일 때 표시) -->
+<div id="rotate-hint">
+  <div class="rotate-icon">📱</div>
+  <h2>폰을 가로로 돌려주세요</h2>
+  <p>배틀 모드는 가로 화면이 더 박진감 넘쳐요!</p>
+  <div class="rotate-arrow">↻</div>
+</div>
+
+<div id="ar-container"></div>
+
+<div id="ar-ui">
+  <div class="badge">POKEMON LIVE</div>
+  <button class="stop-btn" id="stop-btn">EXIT</button>
+</div>
+
+<!-- HP 바 (피카츄 - 우측) -->
+<div id="hp-pikachu" class="hp-bar pikachu-hp">
+  <div class="hp-name">⚡ PIKACHU</div>
+  <div class="hp-track"><div class="hp-fill" id="hp-fill-pikachu"></div></div>
+  <div class="hp-text" id="hp-text-pikachu">60 / 60</div>
+</div>
+
+<!-- HP 바 (리자몽 - 좌측) -->
+<div id="hp-charizard" class="hp-bar charizard-hp">
+  <div class="hp-name">🔥 CHARIZARD</div>
+  <div class="hp-track"><div class="hp-fill" id="hp-fill-charizard"></div></div>
+  <div class="hp-text" id="hp-text-charizard">150 / 150</div>
+</div>
+
+<!-- VS 인트로 화면 (둘 다 인식되면 표시) -->
+<div id="vs-intro">
+  <div class="vs-text">VS</div>
+  <div class="vs-subtitle">BATTLE START!</div>
+</div>
+
+<!-- 배틀 결과 화면 -->
+<div id="battle-result">
+  <div class="result-text" id="result-text">K.O.!</div>
+  <div class="result-winner" id="result-winner">⚡ PIKACHU WINS! ⚡</div>
+  <button class="rematch-btn" id="rematch-btn">REMATCH</button>
+</div>
+
+<div id="debug-log"></div>
+
+<div id="scan-hint">📷 카드를 비춰주세요</div>
+
+<button id="attack-btn">⚡ ATTACK 🔥</button>
+
+<div id="status-overlay" class="active">
+  <div class="status-card" id="status-content">
+    <div class="spinner"></div>
+    <h3>LOADING</h3>
+    <p>잠시만요...</p>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MindARThree } from 'mindar-image-three';
+
+// ===== 디버그 로그 (콘솔에만, 화면 안 보임) =====
+const debugLog = document.getElementById('debug-log');
+function log(msg, type = 'info') {
+  console.log(msg);
+}
+
+// ===== 가로 모드 체크 =====
+const rotateHint = document.getElementById('rotate-hint');
+function checkOrientation() {
+  // 시작 화면 / 결과 화면이 떠있으면 안내 안 함
+  const isInBattle = document.getElementById('ar-ui').classList.contains('active');
+  if (!isInBattle) {
+    rotateHint.classList.remove('active');
+    return;
+  }
+  // 세로 모드면 가로로 안내
+  if (window.innerHeight > window.innerWidth) {
+    rotateHint.classList.add('active');
+  } else {
+    rotateHint.classList.remove('active');
+  }
+}
+window.addEventListener('resize', checkOrientation);
+window.addEventListener('orientationchange', () => setTimeout(checkOrientation, 100));
+
+// ===== 배틀 시스템 상태 =====
+const battleState = {
+  active: false,           // 배틀 진행 중인가
+  vsShown: false,          // VS 화면 떴는가
+  ended: false,            // 배틀 끝났는가
+};
+
+const startScreen = document.getElementById('start-screen');
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const attackBtn = document.getElementById('attack-btn');
+const arUI = document.getElementById('ar-ui');
+const scanHint = document.getElementById('scan-hint');
+const statusOv = document.getElementById('status-overlay');
+const statusContent = document.getElementById('status-content');
+
+let mindarThree = null;
+let mixer = null;
+let punchAction = null;
+let pikachuRoot = null; // anchor에 추가될 모델 그룹
+const sparks = []; // 살아있는 지지직 번개들
+
+function showStatus(html) { statusContent.innerHTML = html; statusOv.classList.add('active'); }
+function showError(t, m) {
+  statusContent.innerHTML = `<h3 style="color:#ff6677">⚠ ${t}</h3><p>${m}</p><button onclick="location.reload()" style="margin-top:16px;background:#FFCB05;color:#222;border:none;padding:8px 24px;border-radius:999px;font-weight:900;cursor:pointer">RETRY</button>`;
+  statusOv.classList.add('active');
+}
+function hideStatus() { statusOv.classList.remove('active'); }
+
+if (typeof MindARThree !== 'function') {
+  showError('LIBRARY LOAD FAILED', 'MindAR 로드 실패');
+} else {
+  hideStatus();
+  startBtn.disabled = false;
+  startBtn.textContent = '⚡ START ⚡';
+}
+
+// =========================================
+// 🔥 화염 입자 (리자몽 입에서 분사)
+// =========================================
+function createFireParticle() {
+  const geometry = new THREE.SphereGeometry(0.04, 8, 8);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xff6600,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const particle = new THREE.Mesh(geometry, material);
+  particle.userData.life = 1.0;
+  particle.userData.maxLife = 0.5 + Math.random() * 0.3;
+  // 입에서 앞으로 + 약간 위로 분사
+  particle.userData.velocity = new THREE.Vector3(
+    (Math.random() - 0.5) * 0.5,
+    (Math.random() - 0.5) * 0.3,
+    0.8 + Math.random() * 1.0
+  );
+  return particle;
+}
+
+// =========================================
+// 🔥 불 오라 (리자몽 주변 빨간/주황 글로우)
+// =========================================
+function createFireAura() {
+  const group = new THREE.Group();
+
+  const aura = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 32, 32),
+    new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uIntensity: { value: 0.4 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uIntensity;
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+
+        float hash(vec3 p) {
+          p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+          p += dot(p, p.yxz + 19.19);
+          return fract((p.x + p.y) * p.z);
+        }
+
+        void main() {
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float fresnel = 1.0 - abs(dot(vNormal, viewDir));
+          fresnel = pow(fresnel, 2.0);
+
+          // 불꽃 노이즈 (빠르게 위로 흐름)
+          float noise = hash(vWorldPos * 4.0 + vec3(0.0, -uTime * 1.5, 0.0));
+          float spark = step(0.92, noise);
+
+          // 불꽃 색: 노란~주황~빨강 (높이 따라)
+          float heightGrad = (vWorldPos.y + 0.3) * 0.8;
+          vec3 fireColor = mix(
+            vec3(1.0, 0.4, 0.0), // 아래: 진한 주황
+            vec3(1.0, 0.9, 0.3), // 위: 노란빛
+            clamp(heightGrad, 0.0, 1.0)
+          );
+          // 가장자리는 더 빨갛게
+          fireColor = mix(vec3(1.0, 0.2, 0.0), fireColor, 1.0 - fresnel * 0.5);
+
+          float alpha = (fresnel * 0.5 + spark * 0.6) * uIntensity;
+          gl_FragColor = vec4(fireColor, alpha);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  group.add(aura);
+  group.userData.aura = aura;
+  return group;
+}
+
+// =========================================
+// ⚡ 전기 구체 (피카츄 주변 약한 글로우)
+// =========================================
+function createElectricAura() {
+  const group = new THREE.Group();
+
+  // 노란 글로우 구체 (안 채워진, 가장자리만 빛나는)
+  const aura = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 32, 32),
+    new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uIntensity: { value: 0.3 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uIntensity;
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+
+        float hash(vec3 p) {
+          p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+          p += dot(p, p.yxz + 19.19);
+          return fract((p.x + p.y) * p.z);
+        }
+
+        void main() {
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float fresnel = 1.0 - abs(dot(vNormal, viewDir));
+          fresnel = pow(fresnel, 2.5);
+
+          // 노이즈 스파크
+          float noise = hash(vWorldPos * 6.0 + uTime * 4.0);
+          float spark = step(0.95, noise);
+
+          vec3 color = vec3(1.0, 0.9, 0.3);
+          float alpha = (fresnel * 0.4 + spark * 0.5) * uIntensity;
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  group.add(aura);
+  group.userData.aura = aura;
+  return group;
+}
+
+// =========================================
+// ⚡ 얇은 지지직 번개 (sparks)
+// 굵은 광선 X, 얇은 line으로 짧게 깜빡깜빡
+// =========================================
+function createSpark(start, end) {
+  const points = [];
+  const segments = 10;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const p = new THREE.Vector3().lerpVectors(start, end, t);
+    if (i > 0 && i < segments) {
+      const offset = 0.06 * (1 - Math.abs(t - 0.5) * 2);
+      p.x += (Math.random() - 0.5) * offset;
+      p.y += (Math.random() - 0.5) * offset;
+      p.z += (Math.random() - 0.5) * offset;
+    }
+    points.push(p);
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xffee00,
+    transparent: true,
+    opacity: 1.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const line = new THREE.Line(geo, mat);
+  line.userData.life = 1.0;
+  line.userData.maxLife = 0.15 + Math.random() * 0.1; // 짧게 (0.15~0.25초)
+  return line;
+}
+
+// =========================================
+// 🎯 AR START
+// =========================================
+async function startAR() {
+  try {
+    showStatus(`<div class="spinner"></div><h3>CAMERA INIT</h3>`);
+
+    mindarThree = new MindARThree({
+      container: document.querySelector('#ar-container'),
+      imageTargetSrc: './assets/pikachu_card.mind?v=' + Date.now(),
+      maxTrack: 2,
+      uiScanning: 'no',
+      uiLoading: 'no',
+      uiError: 'no',
+    });
+
+    // .mind 파일 정보 디버그
+    log(`MindAR 인스턴스 생성됨`);
+
+    const { renderer, scene, camera } = mindarThree;
+    renderer.setClearColor(0x000000, 0);
+
+    // 조명 (디테일 살리는 적정 수준)
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xfff5d6, 0.6);
+    scene.add(hemi);
+    const front = new THREE.DirectionalLight(0xffffff, 1.2);
+    front.position.set(0, 0, 5);
+    scene.add(front);
+    const key = new THREE.DirectionalLight(0xffffff, 0.8);
+    key.position.set(2, 4, 3);
+    scene.add(key);
+
+    // ===== 두 카드를 위한 anchor 설정 =====
+    // .mind 파일 컴파일 순서대로: anchor 0 = 리자몽 (왼쪽 첫 번째), anchor 1 = 피카츄
+    const anchorCharizard = mindarThree.addAnchor(0);
+    const anchorPikachu = mindarThree.addAnchor(1);
+    log(`Anchor[0]=Charizard, Anchor[1]=Pikachu 등록됨`);
+
+    // 각 모델의 상태 저장
+    const pokemons = []; // { root, mixer, action, holoUniforms, modelMinY, modelMaxY, revealStartTime, anchor, name, color }
+
+    // ===== 공통 모델 로드 함수 =====
+    async function loadPokemon(config) {
+      log(`${config.name} GLB 로딩...`);
+
+      const loader = new GLTFLoader();
+      const gltf = await new Promise((resolve, reject) => {
+        loader.load(config.glbPath + '?v=' + Date.now(), resolve, undefined, reject);
+      });
+      log(`${config.name} 로드 완료, anims=${gltf.animations.length}`);
+
+      const model = gltf.scene;
+
+      // 머티리얼 보정 (단순화 - 홀로그램 없음)
+      const holoUniforms = []; // 빈 배열로 유지 (다른 코드 호환성용)
+      model.traverse((child) => {
+        if (child.isMesh && child.material) {
+          child.material.side = THREE.DoubleSide;
+          if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+            child.material.metalness = Math.min(child.material.metalness || 0, 0.1);
+            child.material.envMapIntensity = 1.0;
+          }
+        }
+      });
+
+      // 사이즈 조정 - 모델별 고정 scale 사용 (bounding box 계산이 SkinnedMesh에서 부정확함)
+      model.updateMatrixWorld(true);
+      let scaleFactor;
+      if (config.fixedScale) {
+        // 고정 scale 사용
+        scaleFactor = config.fixedScale;
+      } else {
+        // bbox 계산 (fallback)
+        const box = new THREE.Box3();
+        let meshCount = 0;
+        model.traverse((child) => {
+          if (child.isMesh && !child.isSkinnedMesh) {
+            const meshBox = new THREE.Box3().setFromObject(child);
+            if (!meshBox.isEmpty()) {
+              box.union(meshBox);
+              meshCount++;
+            }
+          } else if (child.isSkinnedMesh) {
+            if (!child.geometry.boundingBox) {
+              child.geometry.computeBoundingBox();
+            }
+            const localBox = child.geometry.boundingBox.clone();
+            localBox.applyMatrix4(child.matrixWorld);
+            if (!localBox.isEmpty()) {
+              box.union(localBox);
+              meshCount++;
+            }
+          }
+        });
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        scaleFactor = (config.targetSize || 0.7) / maxDim;
+      }
+      model.scale.setScalar(scaleFactor);
+      log(`${config.name} scale=${scaleFactor.toFixed(4)}`);
+
+      // 발 보정 + 중심 정렬 (메시만 측정, scaling 적용 후)
+      model.updateMatrixWorld(true);
+      const box2 = new THREE.Box3();
+      model.traverse((child) => {
+        if (child.isMesh && !child.isSkinnedMesh) {
+          const mb = new THREE.Box3().setFromObject(child);
+          if (!mb.isEmpty()) box2.union(mb);
+        } else if (child.isSkinnedMesh) {
+          if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+          const lb = child.geometry.boundingBox.clone();
+          lb.applyMatrix4(child.matrixWorld);
+          if (!lb.isEmpty()) box2.union(lb);
+        }
+      });
+      const center = box2.getCenter(new THREE.Vector3());
+      // x,z(좌우/앞뒤) 중심 정렬, y는 발이 0
+      model.position.x -= center.x;
+      model.position.z -= center.z;
+      model.position.y -= box2.min.y;
+
+      // 그룹 + 카드 회전
+      const modelGroup = new THREE.Group();
+      modelGroup.add(model);
+      modelGroup.rotation.x = Math.PI / 2;
+      modelGroup.position.z = 0.0;
+
+      // bbox (메시만)
+      model.updateMatrixWorld(true);
+      const box3 = new THREE.Box3();
+      model.traverse((child) => {
+        if (child.isMesh && !child.isSkinnedMesh) {
+          const mb = new THREE.Box3().setFromObject(child);
+          if (!mb.isEmpty()) box3.union(mb);
+        } else if (child.isSkinnedMesh) {
+          if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+          const lb = child.geometry.boundingBox.clone();
+          lb.applyMatrix4(child.matrixWorld);
+          if (!lb.isEmpty()) box3.union(lb);
+        }
+      });
+      const modelMinY = box3.min.y;
+      const modelMaxY = box3.max.y;
+
+      // 애니메이션
+      let mixer = null, action = null;
+      if (gltf.animations && gltf.animations.length > 0) {
+        mixer = new THREE.AnimationMixer(gltf.scene);
+        action = mixer.clipAction(gltf.animations[0]);
+        action.setLoop(THREE.LoopOnce);
+        action.clampWhenFinished = false;
+        action.enabled = true;
+        action.weight = 1.0;
+        action.timeScale = 1.0;
+
+        mixer.addEventListener('finished', (e) => {
+          if (e.action === action) {
+            action.stop();
+            action.reset();
+            action.time = 0;
+            action.weight = 0;
+            mixer.update(0);
+          }
+        });
+      }
+
+      // 리자몽 본 찾기 (새 모델: skeleton 기반, 'Wing'/'Tail'/'FireCore' 본)
+      if (config.name === 'Charizard') {
+        config.parts = { wingBones: [], tailBones: [], fireBones: [], headBone: null, jawBone: null };
+        model.traverse((child) => {
+          if (child.isBone || child.type === 'Bone') {
+            const n = child.name;
+            // 머리/턱 본 (입 위치용)
+            if (n.match(/^Head_/i) || n.match(/^EndHead/i)) {
+              if (!config.parts.headBone) config.parts.headBone = child;
+            }
+            if (n.match(/Jaw/i)) {
+              if (!config.parts.jawBone) config.parts.jawBone = child;
+            }
+            // 날개 본 (LWing*, RWing*, Wing*)
+            if (n.match(/Wing/i)) {
+              config.parts.wingBones.push(child);
+            }
+            // 꼬리 본 (Tail1~7만, TailA는 제외 — 충돌 방지)
+            if (n.match(/^Tail[1-9]/i)) {
+              config.parts.tailBones.push(child);
+              child.userData.baseRotY = child.rotation.y;
+            }
+            // 화염 본 (FireCore, FireA)
+            if (n.match(/Fire/i)) {
+              config.parts.fireBones.push(child);
+              child.userData.baseScale = child.scale.x;
+            }
+          }
+        });
+        log(`Charizard bones: wings=${config.parts.wingBones.length} tail=${config.parts.tailBones.length} fire=${config.parts.fireBones.length} head=${!!config.parts.headBone}`);
+      }
+
+      config.anchor.group.add(modelGroup);
+
+      // 오라 추가 (포켓몬별로 다른 타입)
+      const aura = config.name === 'Charizard' ? createFireAura() : createElectricAura();
+      aura.position.z = 0.4;
+      config.anchor.group.add(aura);
+
+      // (홀로그램 초기 상태 제거됨 - 카드 인식 시 바로 등장)
+
+      const pokemon = {
+        name: config.name,
+        root: modelGroup,
+        mixer, action,
+        holoUniforms,
+        modelMinY, modelMaxY,
+        revealStartTime: -1,
+        anchor: config.anchor,
+        aura,
+        sparks: [],
+        flames: [], // 리자몽 화염 입자
+        isAttacking: false,
+        parts: config.parts || {},
+        // ===== 배틀 시스템 =====
+        maxHP: config.maxHP || 60,
+        currentHP: config.maxHP || 60,
+        isKO: false,
+        damageBlinkTime: 0, // 피격 깜빡임 타이머
+        shakeTime: 0,       // 흔들림 타이머
+      };
+
+      // 카드 인식 이벤트
+      config.anchor.onTargetFound = () => {
+        log(`🎯 ${config.name} 카드 인식`);
+        pokemon.revealStartTime = performance.now();
+        showHPBar(config.name, true);
+        updateAttackButtons();
+
+        // 둘 다 인식되면 VS 인트로
+        const allVisible = pokemons.every(p => p.revealStartTime > 0);
+        if (allVisible && pokemons.length >= 2 && !battleState.vsShown) {
+          setTimeout(showVSIntro, 500);
+        }
+      };
+      config.anchor.onTargetLost = () => {
+        log(`❌ ${config.name} 카드 사라짐`);
+        pokemon.revealStartTime = -1;
+        showHPBar(config.name, false);
+        updateAttackButtons();
+      };
+
+      pokemons.push(pokemon);
+      return pokemon;
+    }
+
+    // ===== GLB 로드 (병렬) =====
+    showStatus(`<div class="spinner"></div><h3>LOADING POKEMONS</h3>`);
+
+    await Promise.all([
+      loadPokemon({
+        name: 'Pikachu',
+        glbPath: './assets/pikachu.glb',
+        anchor: anchorPikachu,
+        holoColor: new THREE.Color(0.4, 0.9, 1.0),
+        fixedScale: 0.5,
+        maxHP: 60, // 피카츄 카드 HP
+      }),
+      loadPokemon({
+        name: 'Charizard',
+        glbPath: './assets/charizard.glb',
+        anchor: anchorCharizard,
+        holoColor: new THREE.Color(1.0, 0.6, 0.2),
+        fixedScale: 0.135,
+        maxHP: 150, // 리자몽 카드 HP
+      })
+    ]);
+
+    log(`✅ 모든 포켓몬 로드 완료 (${pokemons.length}마리)`);
+    window._pokemons = pokemons;
+
+    // HP 바 초기화 (값 세팅, 표시는 카드 인식 시)
+    pokemons.forEach(p => updateHPBar(p.name));
+
+    // 첫 번째 포켓몬을 기본 attack 타겟으로 (피카츄)
+    const pikachuPoke = pokemons.find(p => p.name === 'Pikachu');
+    pikachuRoot = pikachuPoke ? pikachuPoke.root : null;
+    if (pikachuPoke) {
+      mixer = pikachuPoke.mixer;
+      punchAction = pikachuPoke.action;
+    }
+
+    // 카드 인식 상태에 따라 공격 버튼 업데이트
+    function updateAttackButtons() {
+      const anyVisible = pokemons.some(p => p.revealStartTime > 0);
+      if (anyVisible) {
+        scanHint.classList.remove('active');
+        attackBtn.classList.add('active');
+      } else {
+        scanHint.classList.add('active');
+        attackBtn.classList.remove('active');
+      }
+    }
+
+    attackBtn.addEventListener('click', triggerPunch);
+
+    // 리매치 버튼
+    document.getElementById('rematch-btn').addEventListener('click', rematch);
+
+    await mindarThree.start();
+    hideStatus();
+    arUI.classList.add('active');
+    scanHint.classList.add('active');
+
+    // 가로 모드 체크 시작
+    setTimeout(checkOrientation, 200);
+
+    // ===== ANIMATION LOOP =====
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const dt = clock.getDelta();
+      const t = clock.getElapsedTime();
+
+      // 모든 포켓몬 업데이트
+      pokemons.forEach(p => {
+        // mixer
+        if (p.mixer) p.mixer.update(dt);
+
+        // 💥 피격 깜빡임 (빨간 emissive)
+        if (p.damageBlinkTime > 0) {
+          p.damageBlinkTime -= dt;
+          const blinkOn = Math.sin(p.damageBlinkTime * 30) > 0;
+          p.root.traverse(child => {
+            if (child.isMesh && child.material) {
+              if (blinkOn) {
+                if (!child.material.userData.origEmissive) {
+                  child.material.userData.origEmissive = (child.material.emissive || new THREE.Color(0,0,0)).clone();
+                }
+                if (child.material.emissive) {
+                  child.material.emissive.setRGB(1.0, 0.2, 0.2);
+                }
+              } else {
+                if (child.material.userData.origEmissive && child.material.emissive) {
+                  child.material.emissive.copy(child.material.userData.origEmissive);
+                }
+              }
+            }
+          });
+          // 끝나면 원상복구
+          if (p.damageBlinkTime <= 0) {
+            p.root.traverse(child => {
+              if (child.isMesh && child.material && child.material.userData.origEmissive && child.material.emissive) {
+                child.material.emissive.copy(child.material.userData.origEmissive);
+              }
+            });
+          }
+        }
+
+        // 💥 피격 흔들림 (좌우)
+        if (p.shakeTime > 0) {
+          p.shakeTime -= dt;
+          if (!p.root.userData.basePosX) p.root.userData.basePosX = p.root.position.x;
+          const shakeIntensity = p.shakeTime / 0.5; // 점점 약해짐
+          p.root.position.x = p.root.userData.basePosX + (Math.random() - 0.5) * 0.1 * shakeIntensity;
+          if (p.shakeTime <= 0) {
+            p.root.position.x = p.root.userData.basePosX || 0;
+          }
+        }
+
+        // 🔥 리자몽 전용: 떠다니기 + 날개짓 + 꼬리 흔들기 + 화염 깜빡
+        if (p.name === 'Charizard' && p.parts) {
+          // 🪂 떠다니기 (위아래 부드럽게 + 미세 회전)
+          if (!p.isAttacking) {
+            p.root.position.y = Math.sin(t * 1.2) * 0.08; // 위아래 8cm 부드럽게
+            p.root.rotation.y = Math.sin(t * 0.6) * 0.05; // 살짝 좌우 기울임
+          } else {
+            // 공격 시 약간 위로 올라감 (위협적인 자세)
+            p.root.position.y = 0.15 + Math.sin(t * 8) * 0.05;
+          }
+
+          // 날개짓 (z축 회전) — 매우 과감하게
+          if (p.parts.wingBones && p.parts.wingBones.length > 0) {
+            const flapSpeed = p.isAttacking ? 12 : 5; // 평소 5Hz
+            const flapAmount = p.isAttacking ? 1.0 : 0.7; // 0.35 → 0.7 (2배 진폭)
+            p.parts.wingBones.forEach((bone, i) => {
+              const phase = i * 0.1;
+              bone.rotation.z = Math.sin(t * flapSpeed + phase) * flapAmount;
+            });
+          }
+          // 꼬리 흔들기 - 베이스 포즈 기준 + 부드러운 웨이브
+          if (p.parts.tailBones && p.parts.tailBones.length > 0) {
+            p.parts.tailBones.forEach((bone, i) => {
+              const phase = i * 0.4;
+              const baseY = bone.userData.baseRotY || 0;
+              // 베이스 포즈 + sin파 (작은 진폭)
+              bone.rotation.y = baseY + Math.sin(t * 1.5 + phase) * 0.06;
+            });
+          }
+          // 화염 본 깜빡 (베이스 스케일 기준)
+          if (p.parts.fireBones && p.parts.fireBones.length > 0) {
+            p.parts.fireBones.forEach((bone, i) => {
+              const baseScale = bone.userData.baseScale || 1;
+              const flicker = baseScale * (0.9 + Math.sin(t * 12 + i) * 0.1);
+              bone.scale.set(flicker, flicker, flicker);
+            });
+          }
+        }
+
+        // 홀로그램 효과 제거됨 (단순 등장)
+
+        // 오라
+        if (p.aura) {
+          p.aura.userData.aura.material.uniforms.uTime.value = t;
+          const intensity = p.isAttacking ? 0.8 : 0.25 + Math.sin(t * 2.5) * 0.1;
+          p.aura.userData.aura.material.uniforms.uIntensity.value = intensity;
+        }
+
+        // 스파크 페이드아웃
+        for (let i = p.sparks.length - 1; i >= 0; i--) {
+          const s = p.sparks[i];
+          s.userData.life -= dt / s.userData.maxLife;
+          s.material.opacity = Math.max(0, s.userData.life);
+          if (s.userData.life <= 0) {
+            p.anchor.group.remove(s);
+            s.geometry.dispose();
+            s.material.dispose();
+            p.sparks.splice(i, 1);
+          }
+        }
+
+        // 🔥 화염 입자 업데이트 (리자몽)
+        for (let i = p.flames.length - 1; i >= 0; i--) {
+          const f = p.flames[i];
+          f.userData.life -= dt / f.userData.maxLife;
+          // 위치 이동 (속도)
+          f.position.x += f.userData.velocity.x * dt;
+          f.position.y += f.userData.velocity.y * dt;
+          f.position.z += f.userData.velocity.z * dt;
+          // 점점 느려짐
+          f.userData.velocity.multiplyScalar(0.95);
+          // 페이드 + 색 변화
+          const lifeRatio = Math.max(0, f.userData.life);
+          f.material.opacity = lifeRatio * 0.9;
+          const scale = 0.5 + lifeRatio * 1.5;
+          f.scale.set(scale, scale, scale);
+          if (lifeRatio < 0.5) {
+            f.material.color.setRGB(1.0, 0.3 * lifeRatio * 2, 0);
+          }
+          if (f.userData.life <= 0) {
+            // attached 화염은 부모(innerModel)에서 제거, 아니면 anchor.group에서 제거
+            if (f.parent) f.parent.remove(f);
+            f.geometry.dispose();
+            f.material.dispose();
+            p.flames.splice(i, 1);
+          }
+        }
+      });
+
+      renderer.render(scene, camera);
+    });
+
+  } catch (err) {
+    console.error(err);
+    log(`ERROR: ${err.message}`, 'err');
+    let msg = err.message || String(err);
+    if (msg.includes('Permission')) msg = '카메라 권한 거부됨';
+    else if (location.protocol === 'file:') msg = 'https/localhost로 띄워주세요';
+    showError('AR INIT FAILED', msg);
+  }
+}
+
+// =========================================
+// ⚔️ 배틀 시스템
+// =========================================
+
+// HP 바 업데이트
+function updateHPBar(pokemonName) {
+  const pokemons = window._pokemons || [];
+  const p = pokemons.find(x => x.name === pokemonName);
+  if (!p) return;
+
+  const id = pokemonName.toLowerCase();
+  const fill = document.getElementById(`hp-fill-${id}`);
+  const text = document.getElementById(`hp-text-${id}`);
+  const bar = document.getElementById(`hp-${id}`);
+  if (!fill || !text || !bar) return;
+
+  const percent = (p.currentHP / p.maxHP) * 100;
+  fill.style.width = `${percent}%`;
+  text.textContent = `${p.currentHP} / ${p.maxHP}`;
+
+  // 색상 변경
+  fill.classList.remove('warn', 'danger');
+  if (percent < 30) fill.classList.add('danger');
+  else if (percent < 60) fill.classList.add('warn');
+}
+
+// HP 바 표시/숨김
+function showHPBar(pokemonName, show = true) {
+  const id = pokemonName.toLowerCase();
+  const bar = document.getElementById(`hp-${id}`);
+  if (bar) bar.classList.toggle('active', show);
+}
+
+// VS 인트로 표시 (둘 다 인식되면)
+function showVSIntro() {
+  if (battleState.vsShown) return;
+  battleState.vsShown = true;
+  battleState.active = true;
+  const vs = document.getElementById('vs-intro');
+  vs.classList.add('active');
+  setTimeout(() => vs.classList.remove('active'), 2000);
+  // 진동
+  if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+}
+
+// 데미지 적용
+function applyDamage(targetName, amount) {
+  const pokemons = window._pokemons || [];
+  const p = pokemons.find(x => x.name === targetName);
+  if (!p || p.isKO) return;
+
+  p.currentHP = Math.max(0, p.currentHP - amount);
+  p.damageBlinkTime = 0.6; // 0.6초 깜빡
+  p.shakeTime = 0.5;       // 0.5초 흔들림
+  updateHPBar(targetName);
+
+  log(`💥 ${targetName} -${amount} HP (${p.currentHP}/${p.maxHP})`);
+
+  // 진동 (피격감)
+  if (navigator.vibrate) navigator.vibrate([60, 30, 60]);
+
+  // HP 0 → KO!
+  if (p.currentHP <= 0) {
+    knockOut(p);
+  }
+}
+
+// KO 처리
+function knockOut(pokemon) {
+  pokemon.isKO = true;
+  log(`💀 ${pokemon.name} K.O.!`);
+
+  // 쓰러지는 모션 (1초 동안 90도 옆으로 회전 + 가라앉음)
+  const startTime = performance.now();
+  const startRotZ = pokemon.root.rotation.z;
+  const startPosY = pokemon.root.position.y;
+
+  function fallStep() {
+    const elapsed = (performance.now() - startTime) / 1000;
+    const t = Math.min(1, elapsed / 1.0);
+    const eased = 1 - Math.pow(1 - t, 3);
+
+    pokemon.root.rotation.z = startRotZ + (Math.PI / 2) * eased;
+    pokemon.root.position.y = startPosY - 0.2 * eased;
+
+    if (t < 1) {
+      requestAnimationFrame(fallStep);
+    } else {
+      // 쓰러진 후 결과 화면 표시
+      setTimeout(() => showBattleResult(pokemon), 800);
+    }
+  }
+  requestAnimationFrame(fallStep);
+}
+
+// 배틀 결과 화면
+function showBattleResult(loser) {
+  if (battleState.ended) return;
+  battleState.ended = true;
+  battleState.active = false;
+
+  const pokemons = window._pokemons || [];
+  const winner = pokemons.find(p => p.name !== loser.name);
+
+  const resultEl = document.getElementById('battle-result');
+  const winnerEl = document.getElementById('result-winner');
+
+  if (winner) {
+    const emoji = winner.name === 'Pikachu' ? '⚡' : '🔥';
+    winnerEl.innerHTML = `${emoji} ${winner.name.toUpperCase()} WINS! ${emoji}`;
+  }
+  resultEl.classList.add('active');
+
+  // 진동 (승리)
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+}
+
+// 리매치 (배틀 리셋)
+function rematch() {
+  const pokemons = window._pokemons || [];
+  pokemons.forEach(p => {
+    p.currentHP = p.maxHP;
+    p.isKO = false;
+    p.damageBlinkTime = 0;
+    p.shakeTime = 0;
+    p.root.rotation.z = 0;
+    p.root.position.y = 0;
+    updateHPBar(p.name);
+  });
+  battleState.ended = false;
+  battleState.vsShown = false;
+  battleState.active = true;
+  document.getElementById('battle-result').classList.remove('active');
+  log('🔄 REMATCH!');
+}
+
+// =========================================
+// 🥊 THUNDER PUNCH (보이는 모든 포켓몬 동시 공격)
+// =========================================
+let isAttacking = false;
+let punchClickCount = 0;
+
+function triggerPunch() {
+  if (isAttacking) return;
+  if (battleState.ended) return; // 끝났으면 공격 X
+
+  const pokemons = window._pokemons || [];
+  const visiblePokemons = pokemons.filter(p => p.revealStartTime > 0 && !p.isKO);
+  if (visiblePokemons.length === 0) return;
+
+  isAttacking = true;
+  punchClickCount++;
+
+  log(`🥊 ATTACK #${punchClickCount} (${visiblePokemons.length} pokemon)`);
+
+  if (navigator.vibrate) navigator.vibrate([50, 30, 100]);
+
+  // ⚔️ 서로 공격! (보이는 포켓몬끼리만)
+  if (visiblePokemons.length >= 2) {
+    // 양쪽 다 보이면 → 서로 공격
+    setTimeout(() => {
+      visiblePokemons.forEach(attacker => {
+        const target = visiblePokemons.find(p => p.name !== attacker.name);
+        if (target) {
+          // 피카츄: 20 데미지, 리자몽: 35 데미지
+          const damage = attacker.name === 'Pikachu' ? 20 : 35;
+          applyDamage(target.name, damage);
+        }
+      });
+    }, 800); // 공격 모션 후 데미지 적용
+  } else if (visiblePokemons.length === 1) {
+    // 한쪽만 보이면 → 상대방한테 데미지 (없으면 그냥 모션만)
+    const attacker = visiblePokemons[0];
+    const target = pokemons.find(p => p.name !== attacker.name);
+    if (target && !target.isKO) {
+      const damage = attacker.name === 'Pikachu' ? 20 : 35;
+      setTimeout(() => applyDamage(target.name, damage), 800);
+    }
+  }
+
+  // 각 보이는 포켓몬 공격
+  visiblePokemons.forEach(p => {
+    p.isAttacking = true;
+
+    // 애니메이션 (있으면)
+    if (p.action && p.mixer) {
+      p.action.stop();
+      p.action.reset();
+      p.action.enabled = true;
+      p.action.paused = false;
+      p.action.weight = 1.0;
+      p.action.timeScale = 1.0;
+      p.action.time = 0;
+      p.action.play();
+    }
+
+    const arGroup = p.anchor.group;
+
+    if (p.name === 'Pikachu') {
+      // ⚡ 피카츄: 전기 스파크
+      const sparkInterval = setInterval(() => {
+        for (let i = 0; i < 3; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const r1 = 0.2 + Math.random() * 0.2;
+          const r2 = r1 + 0.15 + Math.random() * 0.15;
+          const z1 = 0.2 + Math.random() * 0.6;
+          const z2 = z1 + (Math.random() - 0.5) * 0.3;
+          const start = new THREE.Vector3(Math.cos(angle) * r1, Math.sin(angle) * r1, z1);
+          const end = new THREE.Vector3(Math.cos(angle) * r2, Math.sin(angle) * r2, z2);
+          const spark = createSpark(start, end);
+          arGroup.add(spark);
+          p.sparks.push(spark);
+        }
+      }, 80);
+
+      setTimeout(() => {
+        clearInterval(sparkInterval);
+        p.isAttacking = false;
+      }, 1500);
+    } else if (p.name === 'Charizard') {
+      // 🔥 리자몽: 머리 본 위치에서 화염 분사 (정확한 입 위치)
+      const headBone = p.parts && p.parts.headBone;
+      const arGroupLocal = p.anchor.group;
+
+      const flameInterval = setInterval(() => {
+        // 매 프레임마다 머리 본의 현재 world position 가져옴
+        let mouthPos = new THREE.Vector3(0, -0.15, 0.5); // fallback
+        if (headBone) {
+          // 머리 본의 world 좌표
+          const worldPos = new THREE.Vector3();
+          headBone.getWorldPosition(worldPos);
+          // anchor.group 기준 local 좌표로 변환
+          arGroupLocal.worldToLocal(worldPos);
+          // 입은 머리 본 약간 앞쪽
+          mouthPos.copy(worldPos);
+          mouthPos.y -= 0.1; // 살짝 앞으로 (카드 평면 기준)
+        }
+
+        for (let i = 0; i < 10; i++) {
+          const geom = new THREE.SphereGeometry(0.04 + Math.random() * 0.04, 8, 8);
+          // 진짜 불색깔 (빨강~주황~노랑) - 더 빨강 쪽으로
+          const hue = 0.0 + Math.random() * 0.08; // 0=빨강, 0.08=주황
+          const sat = 1.0;
+          const lit = 0.5 + Math.random() * 0.15;
+          const mat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color().setHSL(hue, sat, lit),
+            transparent: true,
+            opacity: 1.0,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          });
+          const flame = new THREE.Mesh(geom, mat);
+          flame.position.copy(mouthPos);
+          flame.position.x += (Math.random() - 0.5) * 0.1;
+          flame.position.y += (Math.random() - 0.5) * 0.05;
+          flame.position.z += (Math.random() - 0.5) * 0.05;
+          // 입 앞쪽으로 분사 (-Y = 카드 앞쪽)
+          flame.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.6,
+            -1.5 - Math.random() * 1.0,
+            (Math.random() - 0.5) * 0.4
+          );
+          flame.userData.life = 1.0;
+          flame.userData.maxLife = 0.5 + Math.random() * 0.3;
+
+          arGroup.add(flame);
+          p.flames.push(flame);
+        }
+      }, 50);
+
+      setTimeout(() => {
+        clearInterval(flameInterval);
+        p.isAttacking = false;
+      }, 1500);
+    }
+  });
+
+  setTimeout(() => {
+    isAttacking = false;
+  }, 1500);
+}
+
+async function stopAR() {
+  if (mindarThree) {
+    try {
+      await mindarThree.stop();
+      mindarThree.renderer.setAnimationLoop(null);
+    } catch (e) {}
+    mindarThree = null;
+  }
+  arUI.classList.remove('active');
+  scanHint.classList.remove('active');
+  attackBtn.classList.remove('active');
+  startScreen.classList.remove('hidden');
+}
+
+startBtn.addEventListener('click', () => {
+  if (startBtn.disabled) return;
+  startScreen.classList.add('hidden');
+  setTimeout(startAR, 500);
+});
+stopBtn.addEventListener('click', stopAR);
+</script>
+
+</body>
+</html>
