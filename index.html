@@ -115,6 +115,31 @@
   #attack-btn.active { display: block; }
   #attack-btn:active { transform: translateX(-50%) translateY(2px); }
 
+  /* 배틀 상태 표시 (자동 배틀) */
+  #battle-status {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+    z-index: 50; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px);
+    border: 3px solid var(--pkmn-red);
+    padding: 12px 28px; border-radius: 999px;
+    display: none; align-items: center; gap: 10px;
+    pointer-events: none;
+    box-shadow: 0 0 30px rgba(238,21,21,0.5);
+  }
+  #battle-status.active { display: flex; animation: battle-pulse 1.2s infinite; }
+  @keyframes battle-pulse {
+    0%, 100% { box-shadow: 0 0 30px rgba(238,21,21,0.5); }
+    50% { box-shadow: 0 0 50px rgba(238,21,21,1); }
+  }
+  .battle-status-icon { font-size: 24px; animation: icon-bounce 0.6s infinite alternate; }
+  @keyframes icon-bounce {
+    from { transform: scale(1); }
+    to { transform: scale(1.2); }
+  }
+  .battle-status-text {
+    font-size: 16px; font-weight: 900; letter-spacing: 3px;
+    color: #fff; text-shadow: 0 0 10px rgba(238,21,21,0.8);
+  }
+
   /* 디버그 패널 (모바일에서 콘솔 못 보니까 화면에 표시) */
   #debug-log {
     position: fixed; top: 60px; left: 8px; right: 8px;
@@ -168,25 +193,33 @@
   #rotate-hint p { font-size: 14px; opacity: 0.7; }
   .rotate-arrow { font-size: 60px; color: var(--pkmn-yellow); margin-top: 24px; animation: spin 2s linear infinite; }
 
-  /* HP 바 */
+  /* HP 바 - 세로 모드 (위/아래 배치) */
   .hp-bar {
-    position: fixed; top: 70px; z-index: 45;
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 45;
     background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
     border: 2px solid #fff;
-    padding: 8px 12px; border-radius: 8px;
-    min-width: 180px; display: none;
+    padding: 8px 14px; border-radius: 10px;
+    width: 90%; max-width: 360px; display: none;
     pointer-events: none;
     transition: opacity 0.3s;
   }
   .hp-bar.active { display: block; }
-  .hp-bar.pikachu-hp { right: 12px; border-color: var(--pkmn-yellow); }
-  .hp-bar.charizard-hp { left: 12px; border-color: #ff6600; }
+  /* 리자몽: 위쪽 (상단) */
+  .hp-bar.charizard-hp {
+    top: 70px; border-color: #ff6600;
+    box-shadow: 0 0 20px rgba(255,102,0,0.4);
+  }
+  /* 피카츄: 아래쪽 (배틀 버튼 위) */
+  .hp-bar.pikachu-hp {
+    bottom: 110px; border-color: var(--pkmn-yellow);
+    box-shadow: 0 0 20px rgba(255,203,5,0.4);
+  }
   .hp-name {
-    font-size: 11px; font-weight: 900; letter-spacing: 1px;
-    margin-bottom: 4px; color: #fff;
+    font-size: 12px; font-weight: 900; letter-spacing: 1px;
+    margin-bottom: 5px; color: #fff;
   }
   .hp-track {
-    background: #333; height: 10px; border-radius: 5px; overflow: hidden;
+    background: #333; height: 12px; border-radius: 6px; overflow: hidden;
     border: 1px solid #555;
   }
   .hp-fill {
@@ -337,7 +370,11 @@
 
 <div id="scan-hint">📷 카드를 비춰주세요</div>
 
-<button id="attack-btn">⚡ ATTACK 🔥</button>
+<!-- 배틀 상태 표시 (자동 배틀 - 버튼 대신) -->
+<div id="battle-status">
+  <div class="battle-status-icon" id="battle-status-icon">⚔️</div>
+  <div class="battle-status-text" id="battle-status-text">BATTLE!</div>
+</div>
 
 <div id="status-overlay" class="active">
   <div class="status-card" id="status-content">
@@ -358,21 +395,11 @@ function log(msg, type = 'info') {
   console.log(msg);
 }
 
-// ===== 가로 모드 체크 =====
+// ===== 가로 모드 체크 — 세로 모드로 사용하므로 비활성화 =====
 const rotateHint = document.getElementById('rotate-hint');
 function checkOrientation() {
-  // 시작 화면 / 결과 화면이 떠있으면 안내 안 함
-  const isInBattle = document.getElementById('ar-ui').classList.contains('active');
-  if (!isInBattle) {
-    rotateHint.classList.remove('active');
-    return;
-  }
-  // 세로 모드면 가로로 안내
-  if (window.innerHeight > window.innerWidth) {
-    rotateHint.classList.add('active');
-  } else {
-    rotateHint.classList.remove('active');
-  }
+  // 세로/가로 다 OK
+  rotateHint.classList.remove('active');
 }
 window.addEventListener('resize', checkOrientation);
 window.addEventListener('orientationchange', () => setTimeout(checkOrientation, 100));
@@ -387,7 +414,7 @@ const battleState = {
 const startScreen = document.getElementById('start-screen');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
-const attackBtn = document.getElementById('attack-btn');
+const attackBtn = document.getElementById('attack-btn'); // null - 더 이상 사용 안함
 const arUI = document.getElementById('ar-ui');
 const scanHint = document.getElementById('scan-hint');
 const statusOv = document.getElementById('status-overlay');
@@ -836,16 +863,21 @@ async function startAR() {
         showHPBar(config.name, true);
         updateAttackButtons();
 
-        // 둘 다 인식되면 VS 인트로
+        // 둘 다 인식되면 VS 인트로 → 자동 배틀 시작
         const allVisible = pokemons.every(p => p.revealStartTime > 0);
-        if (allVisible && pokemons.length >= 2 && !battleState.vsShown) {
-          setTimeout(showVSIntro, 500);
+        if (allVisible && pokemons.length >= 2 && !battleState.vsShown && !battleState.ended) {
+          setTimeout(() => {
+            showVSIntro();
+            // VS 인트로 끝나고 자동 배틀 시작 (2초 후)
+            setTimeout(startAutoBattle, 2000);
+          }, 500);
         }
       };
       config.anchor.onTargetLost = () => {
         log(`❌ ${config.name} 카드 사라짐`);
         pokemon.revealStartTime = -1;
         showHPBar(config.name, false);
+        stopAutoBattle(); // 카드 사라지면 배틀 일시정지
         updateAttackButtons();
       };
 
@@ -889,19 +921,15 @@ async function startAR() {
       punchAction = pikachuPoke.action;
     }
 
-    // 카드 인식 상태에 따라 공격 버튼 업데이트
+    // 카드 인식 상태에 따라 스캔 힌트 토글
     function updateAttackButtons() {
       const anyVisible = pokemons.some(p => p.revealStartTime > 0);
       if (anyVisible) {
         scanHint.classList.remove('active');
-        attackBtn.classList.add('active');
       } else {
         scanHint.classList.add('active');
-        attackBtn.classList.remove('active');
       }
     }
-
-    attackBtn.addEventListener('click', triggerPunch);
 
     // 리매치 버튼
     document.getElementById('rematch-btn').addEventListener('click', rematch);
@@ -1139,6 +1167,7 @@ function applyDamage(targetName, amount) {
 function knockOut(pokemon) {
   pokemon.isKO = true;
   log(`💀 ${pokemon.name} K.O.!`);
+  stopAutoBattle(); // 자동 배틀 정지
 
   // 쓰러지는 모션 (1초 동안 90도 옆으로 회전 + 가라앉음)
   const startTime = performance.now();
@@ -1202,51 +1231,180 @@ function rematch() {
   battleState.active = true;
   document.getElementById('battle-result').classList.remove('active');
   log('🔄 REMATCH!');
+
+  // 둘 다 보이면 다시 자동 배틀 시작
+  const allVisible = pokemons.every(p => p.revealStartTime > 0);
+  if (allVisible) {
+    setTimeout(() => {
+      showVSIntro();
+      setTimeout(startAutoBattle, 2000);
+    }, 500);
+  }
 }
 
 // =========================================
-// 🥊 THUNDER PUNCH (보이는 모든 포켓몬 동시 공격)
+// 🥊 자동 배틀 시스템
 // =========================================
 let isAttacking = false;
 let punchClickCount = 0;
+let autoBattleInterval = null;
 
-function triggerPunch() {
-  if (isAttacking) return;
-  if (battleState.ended) return; // 끝났으면 공격 X
+// 자동 배틀 시작 (둘 다 인식되면 자동 호출)
+function startAutoBattle() {
+  if (autoBattleInterval) return; // 이미 시작됨
+  battleState.active = true;
+
+  // 배틀 상태 표시
+  const battleStatus = document.getElementById('battle-status');
+  if (battleStatus) battleStatus.classList.add('active');
+
+  log('⚔️ AUTO BATTLE START!');
+
+  // 2초마다 자동 공격 (서로 동시)
+  autoBattleInterval = setInterval(() => {
+    if (battleState.ended) {
+      stopAutoBattle();
+      return;
+    }
+    autoAttack();
+  }, 2000);
+
+  // 첫 공격은 VS 화면 끝나고 바로 (1.5초 후)
+  setTimeout(autoAttack, 2500);
+}
+
+function stopAutoBattle() {
+  if (autoBattleInterval) {
+    clearInterval(autoBattleInterval);
+    autoBattleInterval = null;
+  }
+  const battleStatus = document.getElementById('battle-status');
+  if (battleStatus) battleStatus.classList.remove('active');
+}
+
+function autoAttack() {
+  if (isAttacking || battleState.ended) return;
 
   const pokemons = window._pokemons || [];
   const visiblePokemons = pokemons.filter(p => p.revealStartTime > 0 && !p.isKO);
-  if (visiblePokemons.length === 0) return;
+
+  if (visiblePokemons.length < 2) return; // 둘 다 보여야 배틀
 
   isAttacking = true;
   punchClickCount++;
-
-  log(`🥊 ATTACK #${punchClickCount} (${visiblePokemons.length} pokemon)`);
+  log(`⚔️ AUTO ATTACK #${punchClickCount}`);
 
   if (navigator.vibrate) navigator.vibrate([50, 30, 100]);
 
-  // ⚔️ 서로 공격! (보이는 포켓몬끼리만)
-  if (visiblePokemons.length >= 2) {
-    // 양쪽 다 보이면 → 서로 공격
+  // 공격 모션 + 효과 (각 포켓몬)
+  visiblePokemons.forEach(p => {
+    p.isAttacking = true;
+    triggerAttackEffect(p);
+
+    // 1.5초 후 공격 모션 끝
     setTimeout(() => {
-      visiblePokemons.forEach(attacker => {
-        const target = visiblePokemons.find(p => p.name !== attacker.name);
-        if (target) {
-          // 피카츄: 20 데미지, 리자몽: 35 데미지
-          const damage = attacker.name === 'Pikachu' ? 20 : 35;
-          applyDamage(target.name, damage);
-        }
-      });
-    }, 800); // 공격 모션 후 데미지 적용
-  } else if (visiblePokemons.length === 1) {
-    // 한쪽만 보이면 → 상대방한테 데미지 (없으면 그냥 모션만)
-    const attacker = visiblePokemons[0];
-    const target = pokemons.find(p => p.name !== attacker.name);
-    if (target && !target.isKO) {
-      const damage = attacker.name === 'Pikachu' ? 20 : 35;
-      setTimeout(() => applyDamage(target.name, damage), 800);
-    }
+      p.isAttacking = false;
+    }, 1500);
+  });
+
+  // 데미지는 0.8초 후 (공격 모션 후)
+  setTimeout(() => {
+    visiblePokemons.forEach(attacker => {
+      const target = visiblePokemons.find(p => p.name !== attacker.name);
+      if (target && !target.isKO) {
+        const damage = attacker.name === 'Pikachu' ? 20 : 35;
+        applyDamage(target.name, damage);
+      }
+    });
+  }, 800);
+
+  // 다음 공격 가능 (1.5초 후)
+  setTimeout(() => {
+    isAttacking = false;
+  }, 1500);
+}
+
+// 공격 모션/효과 트리거 (각 포켓몬별)
+function triggerAttackEffect(p) {
+  // 애니메이션 (있으면)
+  if (p.action && p.mixer) {
+    p.action.stop();
+    p.action.reset();
+    p.action.enabled = true;
+    p.action.paused = false;
+    p.action.weight = 1.0;
+    p.action.timeScale = 1.0;
+    p.action.time = 0;
+    p.action.play();
   }
+
+  const arGroup = p.anchor.group;
+
+  if (p.name === 'Pikachu') {
+    // ⚡ 피카츄: 전기 스파크
+    const sparkInterval = setInterval(() => {
+      for (let i = 0; i < 3; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r1 = 0.2 + Math.random() * 0.2;
+        const r2 = r1 + 0.15 + Math.random() * 0.15;
+        const z1 = 0.2 + Math.random() * 0.6;
+        const z2 = z1 + (Math.random() - 0.5) * 0.3;
+        const start = new THREE.Vector3(Math.cos(angle) * r1, Math.sin(angle) * r1, z1);
+        const end = new THREE.Vector3(Math.cos(angle) * r2, Math.sin(angle) * r2, z2);
+        const spark = createSpark(start, end);
+        arGroup.add(spark);
+        p.sparks.push(spark);
+      }
+    }, 80);
+    setTimeout(() => clearInterval(sparkInterval), 1200);
+  } else if (p.name === 'Charizard') {
+    // 🔥 리자몽: 입에서 화염 분사
+    const headBone = p.parts && p.parts.headBone;
+    const flameInterval = setInterval(() => {
+      let mouthPos = new THREE.Vector3(0, -0.15, 0.5);
+      if (headBone) {
+        const worldPos = new THREE.Vector3();
+        headBone.getWorldPosition(worldPos);
+        arGroup.worldToLocal(worldPos);
+        mouthPos.copy(worldPos);
+        mouthPos.y -= 0.1;
+      }
+
+      for (let i = 0; i < 10; i++) {
+        const geom = new THREE.SphereGeometry(0.04 + Math.random() * 0.04, 8, 8);
+        const hue = 0.0 + Math.random() * 0.08;
+        const mat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color().setHSL(hue, 1.0, 0.5 + Math.random() * 0.15),
+          transparent: true,
+          opacity: 1.0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const flame = new THREE.Mesh(geom, mat);
+        flame.position.copy(mouthPos);
+        flame.position.x += (Math.random() - 0.5) * 0.1;
+        flame.position.y += (Math.random() - 0.5) * 0.05;
+        flame.position.z += (Math.random() - 0.5) * 0.05;
+        flame.userData.velocity = new THREE.Vector3(
+          (Math.random() - 0.5) * 0.6,
+          -1.5 - Math.random() * 1.0,
+          (Math.random() - 0.5) * 0.4
+        );
+        flame.userData.life = 1.0;
+        flame.userData.maxLife = 0.5 + Math.random() * 0.3;
+
+        arGroup.add(flame);
+        p.flames.push(flame);
+      }
+    }, 50);
+    setTimeout(() => clearInterval(flameInterval), 1200);
+  }
+}
+
+// 기존 triggerPunch는 호환성 위해 유지 (수동 공격 - 안 씀)
+function triggerPunch() {
+  autoAttack();
+}
 
   // 각 보이는 포켓몬 공격
   visiblePokemons.forEach(p => {
@@ -1360,7 +1518,11 @@ async function stopAR() {
   }
   arUI.classList.remove('active');
   scanHint.classList.remove('active');
-  attackBtn.classList.remove('active');
+  // 자동 배틀 정지 + 상태 초기화
+  stopAutoBattle();
+  battleState.active = false;
+  battleState.vsShown = false;
+  battleState.ended = false;
   startScreen.classList.remove('hidden');
 }
 
